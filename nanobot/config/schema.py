@@ -231,6 +231,7 @@ class AgentDefaults(Base):
     max_tool_iterations: int = 40
     memory_window: int = 100
     reasoning_effort: str | None = None  # low / medium / high — enables LLM thinking mode
+    task_models: dict[str, str] = Field(default_factory=dict)  # Task → model mapping (e.g., {"coding": "anthropic/claude-opus-4-5", "research": "openai/gpt-4o"})
 
 
 class AgentsConfig(Base):
@@ -417,5 +418,11 @@ class Config(BaseSettings):
             if spec and spec.is_gateway and spec.default_api_base:
                 return spec.default_api_base
         return None
+
+    def get_model_for_task(self, task: str | None = None) -> str:
+        """Get the model for a specific task, falling back to default model."""
+        if task and task in self.agents.defaults.task_models:
+            return self.agents.defaults.task_models[task]
+        return self.agents.defaults.model
 
     model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")

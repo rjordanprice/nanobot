@@ -668,6 +668,34 @@ Simply send the command above to your nanobot (via CLI or any chat channel), and
 
 Config file: `~/.nanobot/config.json`
 
+### Task-Based Model Switching
+
+Configure different models for different types of tasks. This lets you use lightweight models for simple queries and powerful models for complex work.
+
+**Example config:**
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "anthropic/claude-sonnet-4",
+      "taskModels": {
+        "routine": "anthropic/claude-sonnet-4",
+        "research": "openai/gpt-4o",
+        "coding": "anthropic/claude-opus-4-5",
+        "creative": "openai/gpt-4o-turbo"
+      }
+    }
+  }
+}
+```
+
+**Usage:**
+- `[task:coding] Write a Python function to...` — uses the coding model
+- `[task:research] Find recent papers on...` — uses the research model
+- Regular messages use the default model
+
+The task tag is automatically stripped before sending to the LLM.
+
 ### Providers
 
 > [!TIP]

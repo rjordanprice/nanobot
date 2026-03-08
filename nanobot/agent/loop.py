@@ -65,13 +65,16 @@ class AgentLoop:
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
         channels_config: ChannelsConfig | None = None,
+        task_models: dict[str, str] | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
         self.workspace = workspace
-        self.model = model or provider.get_default_model()
+        self._default_model = model or provider.get_default_model()
+        self.model = self._default_model
+        self.task_models = task_models or {}
         self.max_iterations = max_iterations
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -112,8 +115,25 @@ class AgentLoop:
         self._processing_lock = asyncio.Lock()
         self._register_default_tools()
 
+    def set_model_for_task(self, task: str | None = None) -> str:
+        """Set the model based on task. Returns the selected model."""
+        if task and task in self.task_models:
+            self.model = self.task_models[task]
+        else:
+            self.model = self._default_model
+        # Update subagent model as well
+        self.subagents.model = self.model
+        return self.model
+
+    def detect_task(self, content: str) -> str | None:
+        """Detect task from message content. Override for custom detection logic."""
+        # Check for explicit task tag: [task:coding] or [task:research]
+        match = re.search(r'\[task:(\w+)\]', content, re.IGNORECASE)
+        if match:
+            return match.group(1).lower()
+        return None
+
     def _register_default_tools(self) -> None:
-        """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
         for cls in (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool):
             self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
@@ -334,6 +354,15 @@ class AgentLoop:
         on_progress: Callable[[str], Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
+        # Detect task and set appropriate model
+        detected_task = self.detect_task(msg.content)
+        selected_model = self.set_model_for_task(detected_task)
+        if detected_task and detected_task in self.task_models:
+            logger.info("Task detected: '{}', using model: {}", detected_task, selected_model)
+
+        # Strip task tag from content before processing
+        content = re.sub(r'\[task:\w+\]\s*', '', msg.content, flags=re.IGNORECASE).strip()
+
         # System messages: parse origin from chat_id ("channel:chat_id")
         if msg.channel == "system":
             channel, chat_id = (msg.chat_id.split(":", 1) if ":" in msg.chat_id
@@ -345,7 +374,7 @@ class AgentLoop:
             history = session.get_history(max_messages=self.memory_window)
             messages = self.context.build_messages(
                 history=history,
-                current_message=msg.content, channel=channel, chat_id=chat_id,
+                current_message=content, channel=channel, chat_id=chat_id,
             )
             final_content, _, all_msgs = await self._run_agent_loop(messages)
             self._save_turn(session, all_msgs, 1 + len(history))
@@ -353,14 +382,14 @@ class AgentLoop:
             return OutboundMessage(channel=channel, chat_id=chat_id,
                                   content=final_content or "Background task completed.")
 
-        preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
+        preview = content[:80] + "..." if len(content) > 80 else content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
         key = session_key or msg.session_key
         session = self.sessions.get_or_create(key)
 
         # Slash commands
-        cmd = msg.content.strip().lower()
+        cmd = content.strip().lower()
         if cmd == "/new":
             lock = self._consolidation_locks.setdefault(session.key, asyncio.Lock())
             self._consolidating.add(session.key)
@@ -419,7 +448,7 @@ class AgentLoop:
         history = session.get_history(max_messages=self.memory_window)
         initial_messages = self.context.build_messages(
             history=history,
-            current_message=msg.content,
+            current_message=content,
             media=msg.media if msg.media else None,
             channel=msg.channel, chat_id=msg.chat_id,
         )

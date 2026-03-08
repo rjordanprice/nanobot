@@ -1,0 +1,27 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.nanobot/workspace",
+      "model": "anthropic/claude-opus-4-5",
+      "provider": "auto",
+      "maxTokens": 8192,
+      "temperature": 0.1,
+      "maxToolIterations": 40,
+      "memoryWindow": 100,
+      "taskModels": {
+        "routine": "anthropic/claude-sonnet-4",
+        "research": "openai/gpt-4o",
+        "coding": "anthropic/claude-opus-4-5",
+        "creative": "openai/gpt-4o-turbo"
+      }
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "apiKey": "your-anthropic-api-key"
+    },
+    "openai": {
+      "apiKey": "your-openai-api-key"
+    }
+  }
+}
